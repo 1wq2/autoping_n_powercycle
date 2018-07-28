@@ -7,94 +7,76 @@ import socket
 import multiprocessing
 
 hosttoping = "1.1.1.1"
-successdelay = 20 # How many seconds to wait after a successful ping
-failretry = 2 # How many cycles of failed pings before power cycle
-faildelay = 10 # How long to wait after a failed ping before trying again
-poweroffdelay = 10 # How long to stay powered off
-bootdelay = 10 # How many seconds to wait after power cycle
-powercyclefaildelay = 15 # How long to wait after a power cycle failed before starting over
+successdelay = 2  # How many seconds to wait after a successful ping
+failretry = 2  # How many cycles of failed pings before power cycle
+faildelay = 1  # How long to wait after a failed ping before trying again
+poweroffdelay = 1  # How long to stay powered off
+bootdelay = 1  # How many seconds to wait after power cycle
+powercyclefaildelay = 2  # How long to wait after a power cycle failed before starting over
 reboot_flag = False
-VERBOSE = True
-
-def ping(host):
-    vprint("Pinging " + hosttoping + " on eth0")
-    response = os.system("ping -c 1 -I eth0 -W 2 " + host + "  >/dev/null 2>&1")
-    if response == 0:
-        return True
-    else:
-        return False
 
 
-def logme(logmsg):
-    os.system("logger -i -t DSL -p local7.info \"" + logmsg + "\"")
-
-
-def vprint(*args):
-    # Verbose printing happens here
-    # Called from other locations like this
-    #  vprint ("Look how awesome my verbosity is")
-    # This function is enabled by the -v switch on the CLI
-    if VERBOSE:
-        for arg in args:
-            print(arg)
-
-def vprintandlog(*args):
-    for arg in args:
-        logme(arg)
-    if VERBOSE:
-        for arg in args:
-            print(arg)
-
-def kickit():
+def power_cycle():
     global reboot_flag
 
-    vprintandlog("Switching power of")
-    vprintandlog("Power is off. Sleeping for " + str(poweroffdelay) + " seconds before switching back on")
+    print("Switching power of")
+    print("Power is off. Sleeping for " + str(poweroffdelay) + " seconds before switching back on")
     time.sleep(poweroffdelay)
-    vprintandlog("Power is on. Sleeping for " + str(bootdelay) + " seconds for things to reboot")
+    print("Power is on. Sleeping for " + str(bootdelay) + " seconds for things to reboot")
     time.sleep(bootdelay)
-    vprintandlog("Pinging after reboot")
+    print("Pinging after reboot")
     if ping(hosttoping):
-        vprintandlog(hosttoping + " is now pingable, returning to our normaly scheduled programming.")
+        print(hosttoping + " is now pingable, returning to our normaly scheduled programming.")
         time.sleep(successdelay)
     else:
         reboot_flag = True
 
-def bad_ping(hosttoping):
+
+def bad_ping():
     global reboot_flag
 
-    if reboot_flag == True:
-        vprintandlog("Strange things happened, so we're going to sleep for " +
-                     str(powercyclefaildelay) + " and then try again.")
+    if reboot_flag:
+        print("Strange things happened, so we're going to sleep for " +
+              str(powercyclefaildelay) + " and then try again.")
         time.sleep(powercyclefaildelay)
-        vprintandlog("OK lets try this again.")
+        print("OK lets try this again.")
         reboot_flag = False
     if ping(hosttoping):
-        vprint(hosttoping + " is pingable. Sleeping for " + str(successdelay) + " seconds before checking again.")
+        print(hosttoping + " is pingable. Sleeping for " + str(successdelay) + " seconds before checking again.")
         time.sleep(successdelay)
     else:
-        vprintandlog("No answer from " + hosttoping)
+        print("No answer from " + hosttoping)
         retrycount = 0
         while retrycount <= failretry:
-            vprintandlog("Sleeping for " + str(faildelay) + " seconds before pinging again.")
+            print("Sleeping for " + str(faildelay) + " seconds before pinging again.")
             time.sleep(faildelay)
             if ping(hosttoping):
-                vprintandlog("It's pingable now")
+                print("It's pingable now")
                 break
             else:
                 if retrycount >= failretry:
-                    vprintandlog("It hasn't been pingable for too long so we're going to kick it.")
-                    kickit()
+                    print("It hasn't been pingable for too long so we're going to kick it.")
+                    power_cycle()
                     break
                 else:
                     retrycount += 1
-                    vprintandlog(hosttoping + " still wasn't pingable after " + str(
+                    print(hosttoping + " still wasn't pingable after " + str(
                         retrycount) + " tries.  We will keep trying until we have tried " + str(failretry) + " times.")
+
 
 def get_ip_address():
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     s.connect(("255.255.255.1", 80))
     return s.getsockname()[0]
+
+
+def ping(hosttoping):
+    response = subprocess.call(["ping", "-c", "1", hosttoping], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    if response == 0:
+        return True
+    else:
+        return False
+
 
 def pinger(job_q, results_q):
     DEVNULL = open(os.devnull, 'w')
@@ -108,10 +90,11 @@ def pinger(job_q, results_q):
                                   stdout=DEVNULL)
             results_q.put(ip)
         except:
-            print ("ping failed", ip)
+            print("ping failed", ip)
             global hosttoping
-            hosttoping=ip
-            bad_ping(hosttoping)
+            hosttoping = ip
+            bad_ping()
+
 
 jobs = multiprocessing.Queue()
 results = multiprocessing.Queue()
